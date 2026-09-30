@@ -1,0 +1,42 @@
+name: 每天定时按顺序循环发布十条
+on:
+  schedule:
+    - cron: '0 0,3,6,9,12 * * *' # 北京时间08:00、11:00、14:00、17:00、20:00
+    - cron: '30 1,4,7,10,13 * * *' # 北京时间09:30、12:30、15:30、18:30、21:30
+    - cron: '45 14,15 * * *' # 北京时间22:45、23:45检查并补发当天失败或漏发的帖子
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: telegram-reposter
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 发送帖子
+        id: publish
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TARGET_CHAT: ${{ vars.TARGET_CHAT }}
+          SOURCE_CHAT: ${{ vars.SOURCE_CHAT }}
+        run: python main.py
+      - name: 保存发布进度
+        run: |
+          if ! git diff --quiet -- state.json; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add state.json
+            git commit -m 'Update posting progress'
+            git push
+          fi
+      - name: 标记发布错误
+        if: steps.publish.outcome == 'failure'
+        run: exit 1
